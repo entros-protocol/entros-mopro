@@ -1,0 +1,13 @@
+target/
+build/
+*.jar
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
+
+# `mopro build` regenerates this directory on every run. The consumer
+# (entros-mobile) vendors its own copy with a hand-edited package.json
+# `main` field — see entros-mobile/MoproReactNativeBindings.
+MoproReactNativeBindings/
