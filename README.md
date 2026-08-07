@@ -1,12 +1,18 @@
 # entros-mopro
 
-Mobile prover for the Entros Protocol Hamming-distance Groth16 circuit. Wraps [mopro](https://zkmopro.org) (Rust + arkworks + UniFFI) to produce React Native native bindings that prove `Hamming(fingerprint_new, fingerprint_baseline) < threshold` on-device, without sending the underlying 256-bit fingerprint anywhere.
+Mobile prover for the Entros Protocol Groth16 circuit. It wraps [mopro](https://zkmopro.org) to generate React Native bindings.
 
-The circuit itself lives in [entros-protocol/circuits](https://github.com/entros-protocol/circuits) (`circom/entros_hamming.circom`). This repo packages the proving artifacts into a `.so` + UniFFI bindings consumed by [entros-protocol/entros-mobile](https://github.com/entros-protocol/entros-mobile).
+The packaged circuit proves two Poseidon commitment openings and `min_distance <= HammingDistance < threshold`. It does not transmit either 256-bit fingerprint.
+
+The circuit source lives in [entros-protocol/circuits](https://github.com/entros-protocol/circuits). This repository packages the current artifact generation for [entros-mobile](https://github.com/entros-protocol/entros-mobile).
 
 ## Status
 
-Stable build tooling. Regenerated only when the underlying circuit changes. The vendored output (`MoproReactNativeBindings/`) is gitignored here and held by the consumer (entros-mobile).
+The build tooling produces React Native bindings. The packaged zkey matches the current mobile, web, and devnet verifier generation.
+
+The `circuits` repository contains an unpublished successor. Do not refresh this package until every client artifact and the on-chain verifier can move together.
+
+The generated `MoproReactNativeBindings/` directory is ignored here. `entros-mobile` vendors the reviewed output.
 
 ## Repo layout
 
@@ -22,7 +28,7 @@ Config.toml           # mopro adapter + target config (circom + react-native)
 test-vectors/circom/
 ├── entros_hamming_final.zkey  # 894 KB Groth16 proving key (public artifact)
 └── entroshamming.wasm         # Compiled witness calculator
-tests/                # UniFFI cross-language smoke (Kotlin + Swift FFI bridge)
+tests/                # Binding transport smoke only
 ```
 
 ## Building
@@ -44,18 +50,17 @@ mopro build --mode release --platforms react-native --architectures aarch64-linu
 
 Output: `MoproReactNativeBindings/` (~5 MB; 4.8 MB is `libentros_mopro.so`).
 
+## Binding test boundary
+
+The current Rust, Kotlin, and Swift tests exercise UniFFI transport with a hello-world call. They do not generate or verify an Entros proof.
+
+Add a native proof-generation and verification test before the next artifact release.
+
 ## Vendoring into entros-mobile
 
-```sh
-rm -rf /path/to/entros-mobile/MoproReactNativeBindings
-cp -r MoproReactNativeBindings /path/to/entros-mobile/
+Do not replace the consumer directory by hand. The next release must add a checked synchronization script.
 
-# Restore the mobile-side .gitignore overrides (cp clobbers them).
-# Then edit MoproReactNativeBindings/package.json:
-#   - Set "main": "./src/index.tsx"
-#   - Drop the "lib/" entries from "exports" (the consumer compiles
-#     src/ on the fly via Metro+Babel; lib/ is not shipped).
-```
+That script must validate both repositories, preserve consumer metadata, compare artifact hashes, and replace the directory atomically.
 
 ## Gotchas
 

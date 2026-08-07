@@ -2,7 +2,7 @@
 name = "entros-mopro"
 version = "0.1.0"
 edition = "2021"
-description = "Mobile Groth16 prover for the Entros Protocol Hamming-distance circuit. Wraps mopro to produce React Native UniFFI bindings that prove Hamming(fingerprint_new, fingerprint_baseline) < threshold on-device."
+description = "Mobile Groth16 prover for Entros Poseidon openings and bounded Hamming distance."
 license = "MIT"
 repository = "https://github.com/entros-protocol/entros-mopro"
 documentation = "https://github.com/entros-protocol/entros-mopro#readme"
