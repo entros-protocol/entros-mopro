@@ -12,6 +12,26 @@ use circom_prover::{
 use num_bigint::BigUint;
 use std::str::FromStr;
 
+fn check_key_identity(zkey_path: &str) -> Result<(), MoproError> {
+    #[cfg(feature = "request-bound-v1")]
+    if std::path::Path::new(zkey_path)
+        .file_name()
+        .is_some_and(|name| name == "entros_request_bound_v1_final.zkey")
+    {
+        use sha2::{Digest, Sha256};
+        let bytes = std::fs::read(zkey_path)
+            .map_err(|error| MoproError::CircomError(format!("Read proving key: {error}")))?;
+        if format!("{:x}", Sha256::digest(bytes)) != env!("ENTROS_BOUND_ZKEY_SHA256") {
+            return Err(MoproError::CircomError(
+                "Request-bound proving key SHA-256 mismatch".to_string(),
+            ));
+        }
+    }
+    #[cfg(not(feature = "request-bound-v1"))]
+    let _ = zkey_path;
+    Ok(())
+}
+
 //
 // Data structures for Circom proof representation. The String-based field
 // types are required by UniFFI — its codegen does not understand BigUint —
@@ -173,6 +193,7 @@ pub fn generate_circom_proof(
     circuit_inputs: String,
     proof_lib: ProofLib,
 ) -> Result<CircomProofResult, MoproError> {
+    check_key_identity(&zkey_path)?;
     let name = std::path::Path::new(zkey_path.as_str())
         .file_name()
         .ok_or_else(|| {
@@ -182,6 +203,11 @@ pub fn generate_circom_proof(
     let witness_fn = crate::circom_get(name.to_str().unwrap_or("")).ok_or_else(|| {
         MoproError::CircomError(format!("Unknown ZKEY: {}", name.to_string_lossy()))
     })?;
+
+    let circuit_inputs = crate::inputs::normalize(
+        &circuit_inputs,
+        name == "entros_request_bound_v1_final.zkey",
+    )?;
 
     let ret = CircomProver::prove(proof_lib.into(), witness_fn, circuit_inputs, zkey_path)
         .map_err(|e| MoproError::CircomError(format!("Generate Proof error: {e}")))?;
@@ -204,6 +230,11 @@ pub fn verify_circom_proof(
     proof_result: CircomProofResult,
     proof_lib: ProofLib,
 ) -> Result<bool, MoproError> {
+    check_key_identity(&zkey_path)?;
+    let bound = std::path::Path::new(&zkey_path)
+        .file_name()
+        .is_some_and(|name| name == "entros_request_bound_v1_final.zkey");
+    crate::inputs::validate_public_inputs(&proof_result.inputs, bound)?;
     let prover_proof = circom_prover::prover::CircomProof {
         proof: proof_result.proof.try_into()?,
         pub_inputs: proof_result.inputs.into(),

@@ -4,6 +4,7 @@
 // (witness registration, UniFFI scaffolding, build-script linker hardening).
 
 mod error;
+mod inputs;
 pub use error::MoproError;
 
 // Initialises the shared UniFFI scaffolding and registers `MoproError`.
@@ -55,8 +56,17 @@ pub use circom::{
 // match the bundled mobile asset.
 mod witness {
     rust_witness::witness!(entroshamming);
+    #[cfg(feature = "request-bound-v1")]
+    rust_witness::witness!(entrosrequestboundv1);
 }
 
+#[cfg(not(feature = "request-bound-v1"))]
 crate::set_circom_circuits! {
     ("entros_hamming_final.zkey", circom_prover::witness::WitnessFn::RustWitness(witness::entroshamming_witness)),
+}
+
+#[cfg(feature = "request-bound-v1")]
+crate::set_circom_circuits! {
+    ("entros_hamming_final.zkey", circom_prover::witness::WitnessFn::RustWitness(witness::entroshamming_witness)),
+    ("entros_request_bound_v1_final.zkey", circom_prover::witness::WitnessFn::RustWitness(witness::entrosrequestboundv1_witness)),
 }
