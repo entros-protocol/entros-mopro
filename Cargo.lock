@@ -637,6 +637,7 @@ name = "entros-mopro"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ark-bn254",
  "circom-prover",
  "mopro-ffi",
  "num-bigint",

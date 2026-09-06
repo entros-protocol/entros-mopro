@@ -41,5 +41,5 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: cargo test (lib unit tests)
-        run: cargo test --lib --features uniffi
+      - name: cargo test (unit and legacy proof tests)
+        run: cargo test --lib --test legacy_proof --features uniffi

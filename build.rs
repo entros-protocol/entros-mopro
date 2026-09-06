@@ -88,6 +88,12 @@ fn prepare_bound_wasm(out: &Path) -> Result<String, Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let legacy_key = Path::new("test-vectors/circom/entros_hamming_final.zkey");
+    println!("cargo:rerun-if-changed={}", legacy_key.display());
+    println!(
+        "cargo:rustc-env=ENTROS_LEGACY_ZKEY_SHA256={:x}",
+        Sha256::digest(fs::read(legacy_key)?)
+    );
     let bound = std::env::var_os("CARGO_FEATURE_REQUEST_BOUND_V1").is_some();
     let out = PathBuf::from(std::env::var("OUT_DIR")?);
     prepare_w2c2(&out, bound)?;

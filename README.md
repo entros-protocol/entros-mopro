@@ -28,7 +28,7 @@ Config.toml           # mopro adapter + target config (circom + react-native)
 test-vectors/circom/
 ├── entros_hamming_final.zkey  # 894 KB Groth16 proving key (public artifact)
 └── entroshamming.wasm         # Compiled witness calculator
-tests/                # Binding transport smoke only
+tests/                # Host proof checks and binding transport checks
 ```
 
 ## Building
@@ -52,7 +52,13 @@ Output: `MoproReactNativeBindings/` (~5 MB; 4.8 MB is `libentros_mopro.so`).
 
 ## Binding test boundary
 
-The current Rust, Kotlin, and Swift tests exercise UniFFI transport with a hello-world call. They do not generate or verify an Entros proof.
+The Rust tests generate and verify synthetic Entros proofs. Kotlin and Swift tests check UniFFI transport with a hello-world call.
+
+The proof API accepts registered BN254 Groth16 artifacts. It validates artifact hashes, canonical coordinates, curve membership, and subgroup membership.
+It verifies generated proofs before returning them. The four-input legacy artifact remains supported.
+The optional `request-bound-v1` build adds the six-input artifact. The build requires matching witness and proving-key hashes.
+
+The API does not support BLS12-381 artifacts. Neither registered Entros circuit uses that curve.
 
 Add a native proof-generation and verification test before the next artifact release.
 

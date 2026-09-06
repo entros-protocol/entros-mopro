@@ -2,8 +2,8 @@ use crate::MoproError;
 use circom_prover::{
     prover::{
         circom::{
-            Proof as CircomProverProof, CURVE_BLS12_381, CURVE_BN254, G1 as CircomProverG1,
-            G2 as CircomProverG2,
+            Proof as CircomProverProof, CURVE_BN254, G1 as CircomProverG1, G2 as CircomProverG2,
+            PROTOCOL_GROTH16,
         },
         ProofLib as CircomProverProofLib,
     },
@@ -13,22 +13,27 @@ use num_bigint::BigUint;
 use std::str::FromStr;
 
 fn check_key_identity(zkey_path: &str) -> Result<(), MoproError> {
-    #[cfg(feature = "request-bound-v1")]
-    if std::path::Path::new(zkey_path)
+    use sha2::{Digest, Sha256};
+    let filename = std::path::Path::new(zkey_path)
         .file_name()
-        .is_some_and(|name| name == "entros_request_bound_v1_final.zkey")
-    {
-        use sha2::{Digest, Sha256};
-        let bytes = std::fs::read(zkey_path)
-            .map_err(|error| MoproError::CircomError(format!("Read proving key: {error}")))?;
-        if format!("{:x}", Sha256::digest(bytes)) != env!("ENTROS_BOUND_ZKEY_SHA256") {
+        .and_then(|name| name.to_str());
+    let expected = match filename {
+        Some("entros_hamming_final.zkey") => env!("ENTROS_LEGACY_ZKEY_SHA256"),
+        #[cfg(feature = "request-bound-v1")]
+        Some("entros_request_bound_v1_final.zkey") => env!("ENTROS_BOUND_ZKEY_SHA256"),
+        _ => {
             return Err(MoproError::CircomError(
-                "Request-bound proving key SHA-256 mismatch".to_string(),
-            ));
+                "Unknown proving artifact".to_owned(),
+            ))
         }
+    };
+    let bytes = std::fs::read(zkey_path)
+        .map_err(|error| MoproError::CircomError(format!("Read proving key: {error}")))?;
+    if format!("{:x}", Sha256::digest(bytes)) != expected {
+        return Err(MoproError::CircomError(
+            "Proving key SHA-256 mismatch".to_owned(),
+        ));
     }
-    #[cfg(not(feature = "request-bound-v1"))]
-    let _ = zkey_path;
     Ok(())
 }
 
@@ -131,8 +136,27 @@ impl From<ProofLib> for CircomProverProofLib {
 // rather than panicking the host process.
 //
 fn parse_bigint(s: &str, label: &str) -> Result<BigUint, MoproError> {
-    BigUint::from_str(s)
-        .map_err(|e| MoproError::CircomError(format!("invalid bigint at {label}: {e}")))
+    if s.is_empty()
+        || s.len() > 78
+        || !s.bytes().all(|byte| byte.is_ascii_digit())
+        || (s.len() > 1 && s.starts_with('0'))
+    {
+        return Err(MoproError::CircomError(format!(
+            "Noncanonical coordinate at {label}"
+        )));
+    }
+    let value = BigUint::from_str(s)
+        .map_err(|e| MoproError::CircomError(format!("Invalid coordinate at {label}: {e}")))?;
+    let modulus = BigUint::from_str(
+        "21888242871839275222246405745257275088696311157297823662689037894645226208583",
+    )
+    .map_err(|e| MoproError::CircomError(format!("Invalid base field modulus: {e}")))?;
+    if value >= modulus {
+        return Err(MoproError::CircomError(format!(
+            "Coordinate outside the base field at {label}"
+        )));
+    }
+    Ok(value)
 }
 
 fn parse_g2_coord(coord: &[String], label: &str) -> Result<[BigUint; 2], MoproError> {
@@ -151,28 +175,72 @@ fn parse_g2_coord(coord: &[String], label: &str) -> Result<[BigUint; 2], MoproEr
 impl TryFrom<G1> for CircomProverG1 {
     type Error = MoproError;
     fn try_from(g1: G1) -> Result<Self, Self::Error> {
-        Ok(CircomProverG1 {
+        let point = CircomProverG1 {
             x: parse_bigint(&g1.x, "G1.x")?,
             y: parse_bigint(&g1.y, "G1.y")?,
             z: parse_bigint(&g1.z, "G1.z")?,
-        })
+        };
+        let zero = BigUint::from(0u8);
+        let infinity = point.x == zero && point.y == zero;
+        if point.z != BigUint::from(u8::from(!infinity)) {
+            return Err(MoproError::CircomError(
+                "Expected an affine G1 point".to_owned(),
+            ));
+        }
+        let affine = if infinity {
+            ark_bn254::G1Affine::identity()
+        } else {
+            ark_bn254::G1Affine::new_unchecked(point.x.clone().into(), point.y.clone().into())
+        };
+        if !affine.is_on_curve() || !affine.is_in_correct_subgroup_assuming_on_curve() {
+            return Err(MoproError::CircomError("Invalid G1 curve point".to_owned()));
+        }
+        Ok(point)
     }
 }
 
 impl TryFrom<G2> for CircomProverG2 {
     type Error = MoproError;
     fn try_from(g2: G2) -> Result<Self, Self::Error> {
-        Ok(CircomProverG2 {
+        let point = CircomProverG2 {
             x: parse_g2_coord(&g2.x, "x")?,
             y: parse_g2_coord(&g2.y, "y")?,
             z: parse_g2_coord(&g2.z, "z")?,
-        })
+        };
+        let zero = BigUint::from(0u8);
+        let infinity = point
+            .x
+            .iter()
+            .chain(point.y.iter())
+            .all(|value| value == &zero);
+        if point.z != [BigUint::from(u8::from(!infinity)), zero] {
+            return Err(MoproError::CircomError(
+                "Expected an affine G2 point".to_owned(),
+            ));
+        }
+        let affine = if infinity {
+            ark_bn254::G2Affine::identity()
+        } else {
+            ark_bn254::G2Affine::new_unchecked(
+                ark_bn254::Fq2::new(point.x[0].clone().into(), point.x[1].clone().into()),
+                ark_bn254::Fq2::new(point.y[0].clone().into(), point.y[1].clone().into()),
+            )
+        };
+        if !affine.is_on_curve() || !affine.is_in_correct_subgroup_assuming_on_curve() {
+            return Err(MoproError::CircomError("Invalid G2 curve point".to_owned()));
+        }
+        Ok(point)
     }
 }
 
 impl TryFrom<CircomProof> for CircomProverProof {
     type Error = MoproError;
     fn try_from(proof: CircomProof) -> Result<Self, Self::Error> {
+        if proof.protocol != PROTOCOL_GROTH16 || proof.curve != CURVE_BN254 {
+            return Err(MoproError::CircomError(
+                "Expected a BN254 Groth16 proof".to_owned(),
+            ));
+        }
         Ok(CircomProverProof {
             a: proof.a.try_into()?,
             b: proof.b.try_into()?,
@@ -209,11 +277,16 @@ pub fn generate_circom_proof(
         name == "entros_request_bound_v1_final.zkey",
     )?;
 
-    let ret = CircomProver::prove(proof_lib.into(), witness_fn, circuit_inputs, zkey_path)
-        .map_err(|e| MoproError::CircomError(format!("Generate Proof error: {e}")))?;
+    let ret = CircomProver::prove(
+        proof_lib.clone().into(),
+        witness_fn,
+        circuit_inputs,
+        zkey_path.clone(),
+    )
+    .map_err(|e| MoproError::CircomError(format!("Generate Proof error: {e}")))?;
 
-    match ret.proof.curve.as_ref() {
-        CURVE_BN254 | CURVE_BLS12_381 => Ok(CircomProofResult {
+    let result = match ret.proof.curve.as_ref() {
+        CURVE_BN254 => Ok(CircomProofResult {
             proof: ret.proof.into(),
             inputs: ret.pub_inputs.into(),
         }),
@@ -221,7 +294,14 @@ pub fn generate_circom_proof(
             "Unsupported curve: {}",
             ret.proof.curve
         ))),
+    }?;
+    // The native witness adapter does not enforce circuit assertions.
+    if !verify_circom_proof(zkey_path, result.clone(), proof_lib)? {
+        return Err(MoproError::CircomError(
+            "Generated proof does not satisfy the circuit".to_owned(),
+        ));
     }
+    Ok(result)
 }
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
@@ -263,4 +343,56 @@ macro_rules! set_circom_circuits {
                 .map(|(_, v)| *v)
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_noncanonical_curve_coordinates() {
+        for value in [
+            "",
+            "-1",
+            "+1",
+            "01",
+            " 1",
+            "1 ",
+            "1.0",
+            "21888242871839275222246405745257275088696311157297823662689037894645226208583",
+        ] {
+            assert!(parse_bigint(value, "test").is_err(), "{value}");
+        }
+        assert!(parse_bigint(&"9".repeat(10000), "test").is_err());
+    }
+
+    #[test]
+    fn validates_curve_points_before_dependency_conversion() {
+        assert!(CircomProverG1::try_from(G1 {
+            x: "1".into(),
+            y: "2".into(),
+            z: "1".into()
+        })
+        .is_ok());
+        for (x, y, z) in [("1", "1", "1"), ("1", "2", "2"), ("0", "0", "1")] {
+            assert!(CircomProverG1::try_from(G1 {
+                x: x.into(),
+                y: y.into(),
+                z: z.into()
+            })
+            .is_err());
+        }
+        assert!(CircomProverG1::try_from(G1 {
+            x: "0".into(),
+            y: "0".into(),
+            z: "0".into()
+        })
+        .is_ok());
+        assert!(CircomProverG2::try_from(G2 {
+            x: vec!["1".into(), "1".into()],
+            y: vec!["1".into(), "1".into()],
+            z: vec!["1".into(), "0".into()],
+        })
+        .is_err());
+    }
 }

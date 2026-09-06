@@ -21,6 +21,7 @@ wasm = ["mopro-ffi/wasm"]
 request-bound-v1 = []
 
 [dependencies]
+ark-bn254 = "0.5"
 mopro-ffi = { version = "0.3.4" }
 thiserror = "2.0.12"
 anyhow = "1.0.99"
