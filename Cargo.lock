@@ -637,6 +637,7 @@ name = "entros-mopro"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ark-bn254",
  "circom-prover",
  "mopro-ffi",
  "num-bigint",
@@ -644,6 +645,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sha2",
  "thiserror 2.0.18",
  "wasm-bindgen",
  "witnesscalc-adapter",
