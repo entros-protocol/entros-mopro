@@ -54,6 +54,14 @@ Output: `MoproReactNativeBindings/` (~5 MB; 4.8 MB is `libentros_mopro.so`).
 
 The Rust tests generate and verify synthetic Entros proofs. Kotlin and Swift tests check UniFFI transport with a hello-world call.
 
+Each test file has its own inputs:
+
+- The unit tests and `tests/legacy_proof.rs` read the tracked `test-vectors/` alone.
+- `tests/request_bound.rs` needs the `request-bound-v1` feature, plus a proving key and fixtures named by `ENTROS_BOUND_ZKEY_PATH`, `ENTROS_BOUND_PROOF_FIXTURE` and `ENTROS_BOUND_NEGATIVE_KEY_DIRECTORY`.
+- `tests/ffi.rs` needs `kotlinc` with JNA on `CLASSPATH`, and Swift on macOS.
+
+Run all three before an artifact release.
+
 The proof API accepts registered BN254 Groth16 artifacts. It validates artifact hashes, canonical coordinates, curve membership, and subgroup membership.
 It verifies generated proofs before returning them. The four-input legacy artifact remains supported.
 The optional `request-bound-v1` build adds the six-input artifact. The build requires matching witness and proving-key hashes.
