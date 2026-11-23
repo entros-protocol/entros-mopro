@@ -1,5 +1,7 @@
 # entros-mopro
 
+> **Status:** This repository holds a paused secondary R&D mobile Groth16 prover matching the current devnet artifact generation. Entros paused mobile prover releases pending customer demand and tracks active engineering at [entros.io/roadmap](https://entros.io/roadmap).
+
 Mobile prover for the Entros Protocol Groth16 circuit. It wraps [mopro](https://zkmopro.org) to generate React Native bindings.
 
 The packaged circuit proves two Poseidon commitment openings and `min_distance <= HammingDistance < threshold`. It does not transmit either 256-bit fingerprint.
@@ -35,7 +37,7 @@ tests/                # Host proof checks and binding transport checks
 
 Prerequisites: Rust 1.88+, Android NDK 26.1.10909125, JDK 21, mopro-cli 0.3.5, and `uniffi-bindgen-react-native` 0.29.3-1 from the upstream git tag.
 
-This crate ships native bindings — bindings are produced by `mopro build`, not `cargo build`. Direct `cargo build` works for source-level type-checking and the unit test in `src/lib.rs`, but it does not emit the consumable `MoproReactNativeBindings/` output. Use `mopro build` for any output you intend to vendor into a mobile app.
+This crate ships native bindings. `mopro build` produces the bindings, not `cargo build`. Direct `cargo build` works for source-level type-checking and the unit test in `src/lib.rs`, but it does not emit the consumable `MoproReactNativeBindings/` output. Use `mopro build` for any output you intend to vendor into a mobile app.
 
 ```sh
 # Install matching uniffi-bindgen-react-native (the published binary may be
@@ -82,13 +84,13 @@ That script must validate both repositories, preserve consumer metadata, compare
 
 `build.rs` emits raw linker args to force `libcircuit.a` into the cdylib via `-Wl,--whole-archive` + `--no-whole-archive`, with `--allow-multiple-definition` to accept the symbol duplicates from the two link passes.
 
-Without this, all 239 `entroshamming*` and `witness_c_*` C symbols get garbage-collected during cdylib link because the only Rust call sites — inside `rust-witness`'s `witness!()` macro and `mopro-ffi`'s `set_circom_circuits!` registry — are unreachable to the cdylib linker. The resulting `.so` then fails to `dlopen` with `cannot locate symbol entros_hammingInstantiate`.
+Without this, the cdylib linker drops all 239 `entroshamming*` and `witness_c_*` C symbols. Only `rust-witness`'s `witness!()` macro and `mopro-ffi`'s `set_circom_circuits!` registry call them, leaving them unreachable. The resulting `.so` then fails to `dlopen` with `cannot locate symbol entros_hammingInstantiate`.
 
 ### Wasm basename rename
 
 `rust-witness` 0.1.6 transpiles WASM via w2c2, which strips underscores from the `.wasm` basename when emitting C symbols. `entros_hamming.wasm` would emit `entroshamming*` C functions, and the `witness!()` macro needs the basename to match the C symbol prefix verbatim.
 
-So the `.wasm` is renamed to `entroshamming.wasm` before mopro processes it. The `set_circom_circuits!` lookup key (`entros_hamming_final.zkey`) is independent — it's matched at runtime against the path the JS side passes — and stays as `entros_hamming_final.zkey` to match the bundled mobile asset.
+So the `.wasm` is renamed to `entroshamming.wasm` before mopro processes it. The `set_circom_circuits!` lookup key (`entros_hamming_final.zkey`) is independent and matches the JS runtime path. It stays `entros_hamming_final.zkey` to match the bundled mobile asset.
 
 ### 16 KB page size alignment
 
@@ -109,4 +111,4 @@ mopro 0.3.5 expects the Rust uniffi crate's 0.29 contract version. `cargo instal
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
